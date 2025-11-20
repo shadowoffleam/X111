@@ -1,29 +1,27 @@
 //@version=5
 indicator("CISS Optimized Script", overlay=true, shorttitle="CISS")
-// █ INPUTS
-// =================================================================================
-// --- Moving Averages & Trend ---
+
 maGroup = 'Moving Averages & Trend'
 emaLengthInput = input.int(200, 'Trend Filter EMA Length', group = maGroup)
 volMaLengthInput = input.int(20, 'Volume MA Length', group = maGroup)
-// --- RSI Settings ---
+
 rsiGroup = 'RSI Settings'
 rsiLengthInput = input.int(14, 'RSI Length', group = rsiGroup)
 rsiObInput = input.int(70, 'RSI Overbought', group = rsiGroup)
 rsiOsInput = input.int(30, 'RSI Oversold', group = rsiGroup)
-// --- Volume & Delta ---
+
 volGroup = 'Volume & Delta'
 volMultiplierInput = input.float(1.8, 'Volume Spike Multiplier', group = volGroup)
 cvdMaLengthInput = input.int(21, 'CVD Smoothing Length', group = volGroup)
-// --- Breakout & Channel Settings ---
+
 breakoutGroup = 'Breakout & Channel Settings'
 channelLookbackInput = input.int(20, 'Price Channel Lookback', group = breakoutGroup, tooltip = 'This is used for the Breakout signals AND the plotted Price Channel.')
-// --- Advanced: Multi-Timeframe Filter ---
+
 mtfGroup = 'Advanced: Multi-Timeframe Filter'
 mtfEnabledInput = input.bool(true, 'Enable MTF Trend Filter', group = mtfGroup)
 mtfTimeframeInput = input.timeframe('4H', 'MTF Timeframe', group = mtfGroup, tooltip = 'Select the higher timeframe for the trend filter. Must be higher than the chart timeframe.')
 mtfEmaLengthInput = input.int(50, 'MTF EMA Length', group = mtfGroup)
-// --- Advanced: Divergence Settings ---
+
 divGroup = 'Advanced: Divergence Settings'
 showRsiDivInput = input.bool(true, 'Show RSI Divergence', group = divGroup)
 divSourceInput = input.source(close, 'Divergence Price Source', group = divGroup, tooltip = 'Price source for detecting pivots. `close` is recommended by some analysts, while `high/low` uses traditional wicks.')
@@ -32,220 +30,167 @@ divPivotRightInput = input.int(5, 'Divergence Pivot Lookback (Right)', group = d
 divMaxDistanceInput = input.int(40, 'Max Bars Between Pivots', group = divGroup)
 divMinDistanceInput = input.int(5, 'Min Bars Between Pivots', group = divGroup)
 divNoCrossFilterInput = input.bool(true, 'Enable "No-Cross" Filter', group = divGroup, tooltip = 'Filters out divergences where price crosses the divergence line, improving signal quality.')
-// --- Advanced: Volatility Filter ---
+
 volatilityGroup = 'Advanced: Volatility Filter'
 atrFilterEnabledInput = input.bool(true, 'Enable ATR Filter for Breakouts', group = volatilityGroup)
 atrLengthInput = input.int(14, 'ATR Length', group = volatilityGroup)
 atrMultiplierInput = input.float(1.0, 'Min. Breakout Candle ATR Multiplier', group = volatilityGroup)
-// --- Advanced: Daily Pivot S/R ---
+
 pivotGroup = 'Advanced: Daily Pivot S/R'
 showPivotsInput = input.bool(true, 'Show Daily Pivot S/R Levels', group = pivotGroup)
-// FIXED: Added missing options list
 pivotTypeInput = input.string('Traditional', 'Pivot Calculation Type', options = ['Traditional', 'Fibonacci'], group = pivotGroup, tooltip = 'Choose the formula to calculate S/R levels. (Traditional, Fibonacci)') 
 showPivotSignalsInput = input.bool(true, 'Show S/R Bounce/Rejection Signals', group = pivotGroup)
-// --- Advanced: ADX Market Regime Filter ---
+
 adxGroup = 'Advanced: ADX Market Regime Filter'
 adxFilterEnabledInput = input.bool(true, 'Enable ADX Regime Filter', group = adxGroup)
 adxLengthInput = input.int(14, 'ADX Length', group = adxGroup)
 adxTrendingThresholdInput = input.int(20, 'ADX "Trending" Threshold', group = adxGroup, tooltip = 'Above this value, market is TRENDING (Breakout signals enabled). Below this, market is RANGING (Mean-reversion signals enabled).')
-// --- Advanced: Auto S/R Lines & Dashboard ---
+
 autoSrGroup = 'Advanced: Auto S/R & Dashboard'
 showDashboardInput = input.bool(true, 'Show Master Status Dashboard', group = autoSrGroup)
-// FIXED: Added missing options list
 dashboardPositionInput = input.string('Top Right', 'Dashboard Position', options = ['Top Right', 'Top Left', 'Bottom Right', 'Bottom Left'], group = autoSrGroup) 
 showPriceChannelInput = input.bool(true, 'Show Price Channel (Dynamic S/R)', group = autoSrGroup)
 showPivotSrLinesInput = input.bool(true, 'Show Horizontal Pivot S/R Lines', group = autoSrGroup) 
 pivotSrLookbackInput = input.int(10, 'Pivot S/R Lookback Period', group = autoSrGroup, tooltip = 'How many bars to the left and right to confirm a pivot point.')
-// --- Signal Visibility ---
+
 signalGroup = 'Signal Visibility'
 showBreakoutSignalsInput = input.bool(true, 'Show Breakout Signals', group = signalGroup)
 showTrapSignalsInput = input.bool(true, 'Show Bull/Bear Trap Signals', group = signalGroup)
 showMeanReversionSignalsInput = input.bool(true, 'Show RSI-based Signals', group = signalGroup)
-// =================================================================================
-// █ HELPER FUNCTIONS
-// =================================================================================
-// --- Dashboard Helper Function ---
-// Returns a color based on bullish/bearish/neutral state
-f_getStatusColor(isBull, isBear) =>
-    isBull ? color.new(color.green, 40) : isBear ? color.new(color.red, 40) : color.new(color.gray, 60)
-// --- Divergence "No-Cross" Helper Function ---
-// Checks if price has crossed the divergence line between two pivots
-f_noCross(source, p1_idx, p1_val, p2_idx, p2_val, isBullish) =>
+
+f_getStatusColor(isBull, isBear) => isBull ? color.new(color.green, 40) : isBear ? color.new(color.red, 40) : color.new(color.gray, 60)
+
+f_noCross(series float src, int p1_idx, float p1_val, int p2_idx, float p2_val, bool isBullish) =>
     bool noCross = true
-    // Calculate slope of the divergence line
     float slope = (p2_val - p1_val) / (p2_idx - p1_idx)
-    
-    // Check every bar between the two pivots
     for i = 1 to p2_idx - p1_idx - 1
         float lineVal = p1_val + slope * i
         if isBullish
-            // For bullish divergence, check if any 'low' has crossed below the line
-            if source[bar_index - (p1_idx + i)] < lineVal
+            if src[bar_index - (p1_idx + i)] < lineVal
                 noCross := false
                 break
         else
-            // For bearish divergence, check if any 'high' has crossed above the line
-            if source[bar_index - (p1_idx + i)] > lineVal
+            if src[bar_index - (p1_idx + i)] > lineVal
                 noCross := false
                 break
     noCross
-// =================================================================================
-// █ CALCULATIONS
-// =================================================================================
-// 1. Trend and Volume
+
 trendEma = ta.ema(close, emaLengthInput)
 isUptrend = close > trendEma
 isDowntrend = close < trendEma
 volumeMa = ta.sma(volume, volMaLengthInput)
 isHighVolume = volume > volumeMa * volMultiplierInput
-// 2. RSI
+
 rsi = ta.rsi(close, rsiLengthInput)
-// 3. Simulated Cumulative Volume Delta (CVD)
+
 delta = volume * math.sign(close - open)
 cvd = ta.cum(delta)
 cvdMa = ta.sma(cvd, cvdMaLengthInput)
-// 4. Breakout Levels / Price Channel
-// This is used for BOTH breakout signals and plotting the channel
+
 highestHigh = ta.highest(high, channelLookbackInput)
 lowestLow = ta.lowest(low, channelLookbackInput)
-// 5. MTF Trend Filter (Non-Repainting)
-// We request the value from the *previous* closed bar of the higher timeframe
+
 mtfEmaVal = request.security(syminfo.tickerid, mtfTimeframeInput, ta.ema(close, mtfEmaLengthInput), lookahead = barmerge.lookahead_off)
 mtfCloseVal = request.security(syminfo.tickerid, mtfTimeframeInput, close, lookahead = barmerge.lookahead_off)
 mtfIsUptrend = mtfCloseVal > mtfEmaVal
 mtfIsDowntrend = mtfCloseVal < mtfEmaVal
 mtfBullishFilter = mtfEnabledInput ? mtfIsUptrend : true
 mtfBearishFilter = mtfEnabledInput ? mtfIsDowntrend : true
-// 6. ATR Volatility Filter
+
 atr = ta.atr(atrLengthInput)
 isHighVolCandle = (high - low) > (atr * atrMultiplierInput)
 atrFilter = atrFilterEnabledInput ? isHighVolCandle : true
-// 7. RSI Divergence Engine (FIXED)
-// --- Get Price/RSI values for divergence checks ---
+
 priceSource = divSourceInput == close ? close : divSourceInput == high ? high : low
 rsiVal = rsi
-// --- Bullish Divergence (Lower Lows in Price, Higher Lows in RSI) ---
-// Find pivot lows on price and RSI
+
 plPriceFound = ta.pivotlow(priceSource, divPivotLeftInput, divPivotRightInput)
 plRsiFound = ta.pivotlow(rsiVal, divPivotLeftInput, divPivotRightInput)
-// Get values at the last two price pivots
+
 float priceP1 = ta.valuewhen(not na(plPriceFound), plPriceFound, 0)
 int priceP1_idx = ta.valuewhen(not na(plPriceFound), bar_index, 0)
 float priceP2 = ta.valuewhen(not na(plPriceFound), plPriceFound, 1)
 int priceP2_idx = ta.valuewhen(not na(plPriceFound), bar_index, 1)
-// Get values at the last two RSI pivots
+
 float rsiP1 = ta.valuewhen(not na(plRsiFound), plRsiFound, 0)
 int rsiP1_idx = ta.valuewhen(not na(plRsiFound), bar_index, 0)
 float rsiP2 = ta.valuewhen(not na(plRsiFound), plRsiFound, 1)
 int rsiP2_idx = ta.valuewhen(not na(plRsiFound), bar_index, 1)
 
-// ADJUSTMENT: Correct indices to point to actual pivot (not confirmation bar)
 priceP1_idx := priceP1_idx - divPivotRightInput
 priceP2_idx := priceP2_idx - divPivotRightInput
 rsiP1_idx := rsiP1_idx - divPivotRightInput
 rsiP2_idx := rsiP2_idx - divPivotRightInput
-// Check for "No-Cross" filter
+
 bool noCrossBull = divNoCrossFilterInput ? f_noCross(low, rsiP2_idx, rsiP2, rsiP1_idx, rsiP1, true) : true
-// Define Bullish Divergence
-bool bullishDivergence = showRsiDivInput and 
-     (priceP1 < priceP2) and                // Lower Low in Price
-     (rsiP1 > rsiP2) and                    // Higher Low in RSI
-     (rsiP1_idx == priceP1_idx) and         // Ensure pivots are aligned
-     (rsiP2_idx == priceP2_idx) and 
-     (rsiP1_idx - rsiP2_idx > divMinDistanceInput) and // Min distance
-     (rsiP1_idx - rsiP2_idx < divMaxDistanceInput) and // Max distance
-     (rsiP1 > rsiOsInput) and               // Exit oversold
-     noCrossBull                            // No-Cross filter passed
-// --- Bearish Divergence (Higher Highs in Price, Lower Highs in RSI) ---
-// Find pivot highs on price and RSI
+bool bullishDivergence = showRsiDivInput and (priceP1 < priceP2) and (rsiP1 > rsiP2) and (rsiP1_idx == priceP1_idx) and (rsiP2_idx == priceP2_idx) and (rsiP1_idx - rsiP2_idx > divMinDistanceInput) and (rsiP1_idx - rsiP2_idx < divMaxDistanceInput) and (rsiP1 > rsiOsInput) and noCrossBull
+
 phPriceFound = ta.pivothigh(priceSource, divPivotLeftInput, divPivotRightInput)
 phRsiFound = ta.pivothigh(rsiVal, divPivotLeftInput, divPivotRightInput)
-// Get values at the last two price pivots
+
 float pricePh1 = ta.valuewhen(not na(phPriceFound), phPriceFound, 0)
 int pricePh1_idx = ta.valuewhen(not na(phPriceFound), bar_index, 0)
 float pricePh2 = ta.valuewhen(not na(phPriceFound), phPriceFound, 1)
 int pricePh2_idx = ta.valuewhen(not na(phPriceFound), bar_index, 1)
-// Get values at the last two RSI pivots
+
 float rsiPh1 = ta.valuewhen(not na(phRsiFound), phRsiFound, 0)
 int rsiPh1_idx = ta.valuewhen(not na(phRsiFound), bar_index, 0)
 float rsiPh2 = ta.valuewhen(not na(phRsiFound), phRsiFound, 1)
 int rsiPh2_idx = ta.valuewhen(not na(phRsiFound), bar_index, 1)
 
-// ADJUSTMENT: Correct indices to point to actual pivot (not confirmation bar)
 pricePh1_idx := pricePh1_idx - divPivotRightInput
 pricePh2_idx := pricePh2_idx - divPivotRightInput
 rsiPh1_idx := rsiPh1_idx - divPivotRightInput
 rsiPh2_idx := rsiPh2_idx - divPivotRightInput
-// Check for "No-Cross" filter
+
 bool noCrossBear = divNoCrossFilterInput ? f_noCross(high, rsiPh2_idx, rsiPh2, rsiPh1_idx, rsiPh1, false) : true
-// Define Bearish Divergence
-bool bearishDivergence = showRsiDivInput and
-     (pricePh1 > pricePh2) and              // Higher High in Price
-     (rsiPh1 < rsiPh2) and                  // Lower High in RSI
-     (rsiPh1_idx == pricePh1_idx) and       // Ensure pivots are aligned
-     (rsiPh2_idx == pricePh2_idx) and 
-     (rsiPh1_idx - rsiPh2_idx > divMinDistanceInput) and // Min distance
-     (rsiPh1_idx - rsiPh2_idx < divMaxDistanceInput) and // Max distance
-     (rsiPh1 < rsiObInput) and              // Exit overbought
-     noCrossBear                            // No-Cross filter passed
-// 8. ADX Market Regime Filter
+bool bearishDivergence = showRsiDivInput and (pricePh1 > pricePh2) and (rsiPh1 < rsiPh2) and (rsiPh1_idx == pricePh1_idx) and (rsiPh2_idx == pricePh2_idx) and (rsiPh1_idx - rsiPh2_idx > divMinDistanceInput) and (rsiPh1_idx - rsiPh2_idx < divMaxDistanceInput) and (rsiPh1 < rsiObInput) and noCrossBear
+
 [diPlus, diMinus, adx] = ta.dmi(adxLengthInput, adxLengthInput)
 isTrendingMarket = adxFilterEnabledInput ? adx > adxTrendingThresholdInput : true
 isRangingMarket = adxFilterEnabledInput ? adx < adxTrendingThresholdInput : true
-// 9. Daily Pivot Point S/R (ENHANCED)
+
 [prevHigh, prevLow, prevClose] = request.security(syminfo.tickerid, 'D', [high, low, close], lookahead = barmerge.lookahead_off)
 float p = (prevHigh + prevLow + prevClose) / 3
 float prevRange = prevHigh - prevLow
-// --- Calculate S/R levels based on user's choice ---
+
 float r1 = na, float s1 = na, float r2 = na, float s2 = na, float r3 = na, float s3 = na
 if (pivotTypeInput == 'Traditional')
     r1 := (2 * p) - prevLow
     s1 := (2 * p) - prevHigh
     r2 := p + prevRange
     s2 := p - prevRange
-    r3 := prevHigh + 2 * (p - prevLow) //
-    s3 := prevLow - 2 * (prevHigh - p) //
+    r3 := prevHigh + 2 * (p - prevLow)
+    s3 := prevLow - 2 * (prevHigh - p)
 else if (pivotTypeInput == 'Fibonacci')
-    r1 := p + (0.382 * prevRange) //
-    s1 := p - (0.382 * prevRange) //
-    r2 := p + (0.618 * prevRange) //
-    s2 := p - (0.618 * prevRange) //
-    r3 := p + (1.000 * prevRange) //
-    s3 := p - (1.000 * prevRange) //
-// 10. Horizontal Pivot S/R Line Calculations
+    r1 := p + (0.382 * prevRange)
+    s1 := p - (0.382 * prevRange)
+    r2 := p + (0.618 * prevRange)
+    s2 := p - (0.618 * prevRange)
+    r3 := p + (1.000 * prevRange)
+    s3 := p - (1.000 * prevRange)
+
 ph = ta.pivothigh(high, pivotSrLookbackInput, pivotSrLookbackInput)
 pl = ta.pivotlow(low, pivotSrLookbackInput, pivotSrLookbackInput)
 var float recentPhVal = na
 var float recentPlVal = na
 if (not na(ph))
-    recentPhVal := ph // Get the value from the pivot bar
+    recentPhVal := ph
 if (not na(pl))
-    recentPlVal := pl // Get the value from the pivot bar
-// =================================================================================
-// █ SIGNAL LOGIC
-// =================================================================================
-// ---- BULLISH CONDITIONS ----
-// ADX > Threshold (Trending): Breakout
+    recentPlVal := pl
+
 bullishBreakout = showBreakoutSignalsInput and ta.crossover(close, highestHigh) and isHighVolume and isUptrend and (cvd > cvdMa) and mtfBullishFilter and atrFilter and isTrendingMarket
-// ADX < Threshold (Ranging): Mean Reversion & Traps
 bearTrap = showTrapSignalsInput and low < lowestLow and close > lowestLow and isHighVolume and rsi < rsiOsInput and mtfBullishFilter and isRangingMarket
 rsiBuy = showMeanReversionSignalsInput and ta.crossover(rsi, rsiOsInput) and isUptrend and (cvd > cvdMa) and mtfBullishFilter and isRangingMarket
 f_isSupportLevel(level) => low < level and close > level
 supportBounce = showPivotSignalsInput and (f_isSupportLevel(p) or f_isSupportLevel(s1) or f_isSupportLevel(s2) or f_isSupportLevel(s3)) and isUptrend and mtfBullishFilter and isRangingMarket
-// ---- BEARISH CONDITIONS ----
-// ADX > Threshold (Trending): Breakout
+
 bearishBreakout = showBreakoutSignalsInput and ta.crossunder(close, lowestLow) and isHighVolume and isDowntrend and (cvd < cvdMa) and mtfBearishFilter and atrFilter and isTrendingMarket
-// ADX < Threshold (Ranging): Mean Reversion & Traps
 bullTrap = showTrapSignalsInput and high > highestHigh and close < highestHigh and isHighVolume and rsi > rsiObInput and mtfBearishFilter and isRangingMarket
 rsiSell = showMeanReversionSignalsInput and ta.crossunder(rsi, rsiObInput) and isDowntrend and (cvd < cvdMa) and mtfBearishFilter and isRangingMarket
 f_isResistanceLevel(level) => high > level and close < level
 resistanceRejection = showPivotSignalsInput and (f_isResistanceLevel(p) or f_isResistanceLevel(r1) or f_isResistanceLevel(r2) or f_isResistanceLevel(r3)) and isDowntrend and mtfBearishFilter and isRangingMarket
-// =================================================================================
 
-// █ PLOTTING & VISUALS
-// =================================================================================
-// --- 1. Master Status Dashboard (ENHANCED) ---
-// Declare table 'var' so it initializes only once
 var table statusDashboard = table.new(
      position = (dashboardPositionInput == 'Top Right' ? position.top_right : dashboardPositionInput == 'Top Left' ? position.top_left : dashboardPositionInput == 'Bottom Right' ? position.bottom_right : position.bottom_left),
      columns = 2, 
@@ -254,47 +199,38 @@ var table statusDashboard = table.new(
      border_width = 1, 
      border_color = color.gray
  )
-if (showDashboardInput and barstate.islast) // Update table only on the last bar
-    // --- Header ---
+if (showDashboardInput and barstate.islast)
     table.cell(statusDashboard, 0, 0, 'Metric', text_color = color.white, text_halign = text.align_left)
     table.cell(statusDashboard, 1, 0, 'Status', text_color = color.white, text_halign = text.align_right)
     
-    // --- Row 1: Main Trend ---
     table.cell(statusDashboard, 0, 1, 'Main Trend', text_color = color.gray, text_halign = text.align_left)
     string mainTrendText = isUptrend ? 'BULL' : 'BEAR'
     table.cell(statusDashboard, 1, 1, mainTrendText, text_color = color.white, text_halign = text.align_right, bgcolor = f_getStatusColor(isUptrend, isDowntrend))
     
-    // --- Row 2: MTF Trend ---
     string mtfTrendText = mtfEnabledInput ? (mtfIsUptrend ? 'BULL' : 'BEAR') : 'OFF'
     table.cell(statusDashboard, 0, 2, 'MTF Trend', text_color = color.gray, text_halign = text.align_left)
     table.cell(statusDashboard, 1, 2, mtfTrendText, text_color = color.white, text_halign = text.align_right, bgcolor = mtfEnabledInput ? f_getStatusColor(mtfIsUptrend, mtfIsDowntrend) : color.new(color.gray, 60))
     
-    // --- Row 3: Market Regime (ADX) ---
     string regimeText = adxFilterEnabledInput ? (isTrendingMarket ? 'TRENDING' : 'RANGING') : 'OFF'
     table.cell(statusDashboard, 0, 3, 'Market Regime', text_color = color.gray, text_halign = text.align_left)
     table.cell(statusDashboard, 1, 3, regimeText, text_color = color.white, text_halign = text.align_right, bgcolor = adxFilterEnabledInput ? f_getStatusColor(isTrendingMarket, isRangingMarket) : color.new(color.gray, 60))
     
-    // --- Row 4: Volume Pressure ---
     string volText = isHighVolume ? 'HIGH' : 'LOW'
     table.cell(statusDashboard, 0, 4, 'Volume', text_color = color.gray, text_halign = text.align_left)
     table.cell(statusDashboard, 1, 4, volText, text_color = color.white, text_halign = text.align_right, bgcolor = f_getStatusColor(isHighVolume, not isHighVolume and volume < volumeMa))
     
-    // --- Row 5: CVD Flow ---
     string cvdText = cvd > cvdMa ? 'BULL' : 'BEAR'
     table.cell(statusDashboard, 0, 5, 'CVD Flow', text_color = color.gray, text_halign = text.align_left)
     table.cell(statusDashboard, 1, 5, cvdText, text_color = color.white, text_halign = text.align_right, bgcolor = f_getStatusColor(cvd > cvdMa, cvd < cvdMa))
-// --- 2. Plot S/R Levels ---
-// --- Plot Price Channel (Dynamic S/R) (ENHANCED) ---
-// Changed style to 'linebr' for a cleaner "stepped" look.
+
 plotHigh = plot(showPriceChannelInput ? highestHigh : na, 'Price Channel High', color.new(color.blue, 70), style = plot.style_linebr, linewidth = 1)
 plotLow = plot(showPriceChannelInput ? lowestLow : na, 'Price Channel Low', color.new(color.blue, 70), style = plot.style_linebr, linewidth = 1)
-// ENHANCED: Fill the channel with a dynamic, trend-based color
 color channelFillColor = isUptrend ? color.new(color.green, 90) : color.new(color.red, 90)
 fill(plotHigh, plotLow, color = showPriceChannelInput ? channelFillColor : na, title = 'Price Channel Cloud')
-// --- Plot Horizontal Pivot S/R Lines ---
+
 plot(showPivotSrLinesInput ? recentPhVal : na, 'Recent Pivot High', color.new(color.red, 20), style = plot.style_linebr, linewidth = 2)
 plot(showPivotSrLinesInput ? recentPlVal : na, 'Recent Pivot Low', color.new(color.green, 20), style = plot.style_linebr, linewidth = 2)
-// --- Plot Daily Pivot S/R Levels (ENHANCED with R3/S3) ---
+
 plot(showPivotsInput ? p : na, 'Pivot (P)', color.new(color.gray, 0), style = plot.style_linebr)
 plot(showPivotsInput ? r1 : na, 'R1', color.new(color.red, 30), style = plot.style_linebr)
 plot(showPivotsInput ? s1 : na, 'S1', color.new(color.green, 30), style = plot.style_linebr)
@@ -302,34 +238,28 @@ plot(showPivotsInput ? r2 : na, 'R2', color.new(color.red, 70), style = plot.sty
 plot(showPivotsInput ? s2 : na, 'S2', color.new(color.green, 70), style = plot.style_linebr)
 plot(showPivotsInput ? r3 : na, 'R3', color.new(color.red, 85), style = plot.style_linebr, title = 'R3 (New)')
 plot(showPivotsInput ? s3 : na, 'S3', color.new(color.green, 85), style = plot.style_linebr, title = 'S3 (New)')
-// --- 3. Plot Trend Visuals ---
-// Plotting the trend EMA
+
 plot(trendEma, 'Trend EMA', color = isUptrend ? color.new(color.teal, 50) : color.new(color.orange, 50), linewidth = 2)
-// Background color to indicate trend
 bgcolor(isUptrend ? color.new(color.green, 90) : isDowntrend ? color.new(color.red, 90) : color.new(color.gray, 90))
-// --- 4. Plotting Signals ---
-// Bullish Signals
+
 plotshape(bullishBreakout, title = 'Bullish Breakout', style = shape.labelup, location = location.belowbar, color = color.new(color.green, 20), text = 'BO', textcolor = color.white, size = size.tiny)
 plotshape(bearTrap, title = 'Bear Trap', style = shape.labelup, location = location.belowbar, color = color.new(color.lime, 0), text = 'TRAP', textcolor = color.white, size = size.small)
 plotshape(rsiBuy, title = 'RSI Buy', style = shape.triangleup, location = location.belowbar, color = color.new(color.blue, 0), size = size.small)
 plotshape(bullishDivergence, title = 'Bullish Divergence', style = shape.labelup, location = location.belowbar, color = color.new(color.teal, 0), text = 'DIV', textcolor = color.white, size = size.normal)
 plotshape(supportBounce, title = 'Support Bounce', style = shape.diamond, location = location.belowbar, color = color.new(color.aqua, 0), size = size.small, text = 'S')
-// Bearish Signals
+
 plotshape(bearishBreakout, title = 'Bearish Breakout', style = shape.labeldown, location = location.abovebar, color = color.new(color.maroon, 20), text = 'BO', textcolor = color.white, size = size.tiny)
 plotshape(bullTrap, title = 'Bull Trap', style = shape.labeldown, location = location.abovebar, color = color.new(color.red, 0), text = 'TRAP', textcolor = color.white, size = size.small)
 plotshape(rsiSell, title = 'RSI Sell', style = shape.triangledown, location = location.abovebar, color = color.new(color.orange, 0), size = size.small)
 plotshape(bearishDivergence, title = 'Bearish Divergence', style = shape.labeldown, location = location.abovebar, color = color.new(color.fuchsia, 0), text = 'DIV', textcolor = color.white, size = size.normal)
 plotshape(resistanceRejection, title = 'Resistance Rejection', style = shape.diamond, location = location.abovebar, color = color.new(color.fuchsia, 0), size = size.small, text = 'R')
-// =================================================================================
-// █ ALERTS (ENHANCED: Discrete alerts for actionable signals)
-// =================================================================================
-// --- Bullish Alerts ---
+
 alertcondition(bullishBreakout, title = 'CISS: Bullish Breakout', message = 'CISS ({{interval}}): {{ticker}} Bullish Breakout signal @ {{close}}')
 alertcondition(bearTrap, title = 'CISS: Bear Trap', message = 'CISS ({{interval}}): {{ticker}} Potential Bear Trap detected.')
 alertcondition(rsiBuy, title = 'CISS: RSI Buy', message = 'CISS ({{interval}}): {{ticker}} RSI Oversold Buy signal.')
 alertcondition(bullishDivergence, title = 'CISS: Bullish RSI Divergence', message = 'CISS ({{interval}}): {{ticker}} Confirmed Bullish Divergence on RSI.')
 alertcondition(supportBounce, title = 'CISS: Support Bounce', message = 'CISS ({{interval}}): {{ticker}} Bounce from Daily Pivot Support.')
-// --- Bearish Alerts ---
+
 alertcondition(bearishBreakout, title = 'CISS: Bearish Breakout', message = 'CISS ({{interval}}): {{ticker}} Bearish Breakout signal @ {{close}}')
 alertcondition(bullTrap, title = 'CISS: Bull Trap', message = 'CISS ({{interval}}): {{ticker}} Potential Bull Trap detected.')
 alertcondition(rsiSell, title = 'CISS: RSI Sell', message = 'CISS ({{interval}}): {{ticker}} RSI Overbought Sell signal.')
