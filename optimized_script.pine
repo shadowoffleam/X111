@@ -58,20 +58,19 @@ showBreakoutSignalsInput = input.bool(true, 'Show Breakout Signals', group = sig
 showTrapSignalsInput = input.bool(true, 'Show Bull/Bear Trap Signals', group = signalGroup)
 showMeanReversionSignalsInput = input.bool(true, 'Show RSI-based Signals', group = signalGroup)
 
-f_getStatusColor(isBull, isBear) =>
-    isBull ? color.new(color.green, 40) : isBear ? color.new(color.red, 40) : color.new(color.gray, 60)
+f_getStatusColor(isBull, isBear) => isBull ? color.new(color.green, 40) : isBear ? color.new(color.red, 40) : color.new(color.gray, 60)
 
-f_noCross(source, p1_idx, p1_val, p2_idx, p2_val, isBullish) =>
+f_noCross(series float src, int p1_idx, float p1_val, int p2_idx, float p2_val, bool isBullish) =>
     bool noCross = true
     float slope = (p2_val - p1_val) / (p2_idx - p1_idx)
     for i = 1 to p2_idx - p1_idx - 1
         float lineVal = p1_val + slope * i
         if isBullish
-            if source[bar_index - (p1_idx + i)] < lineVal
+            if src[bar_index - (p1_idx + i)] < lineVal
                 noCross := false
                 break
         else
-            if source[bar_index - (p1_idx + i)] > lineVal
+            if src[bar_index - (p1_idx + i)] > lineVal
                 noCross := false
                 break
     noCross
